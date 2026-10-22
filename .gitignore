@@ -1,0 +1,21 @@
+# Dependencies (Never commit these!)
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Local Environment Variables (Keep secrets private!)
+.env
+.env.local
+.env*.local
+
+# Next.js Build Outputs
+.next/
+out/
+build/
+dist/
+
+# OS artifacts
+.DS_Store
+Thumbs.db

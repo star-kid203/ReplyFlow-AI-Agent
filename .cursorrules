@@ -1,0 +1,24 @@
+# FILE: .cursorrules
+# Cursor Agentic Configuration for ReplyFlow
+# Competition: Open Agent Hackathon 2026 (GenAI.works)
+
+[project_context]
+project_name = "ReplyFlow"
+architecture = "Multi-Tenant Autonomous Customer Operations Agent"
+stack_backend = "Python 3.13, FastAPI, SQLAlchemy 2.0 (asyncpg), LangGraph, Groq LPU, Pydantic v2"
+stack_frontend = "Next.js 16 (App Router), React 19, Tailwind CSS, Lucide Icons"
+database = "PostgreSQL 16 with Tenant Logical RLS (business_id isolation)"
+target_tracks = ["Solving Fragmented Intelligence", "The Agent That Can Explain Why", "Wildcard [Tinkerer]"]
+
+[sponsor_technologies]
+data_layer = "Zetaris AI Data Harness (Model Context Protocol / Federated SQL Engine)"
+knowledge_layer = "Neo4j Graph Database (Cross-channel long-term customer memory)"
+cognition_layer = "Meterless Serverless Cognition & Token Economics Governance"
+guardrails_layer = "NVIDIA NIM / NeMo Guardrail Evaluation in Policy Gate"
+ide = "Cursor IDE"
+
+[coding_standards]
+1. Never commit secrets, live API keys, or database credentials.
+2. Maintain strict multi-tenant boundary isolation across every query: always scope by `business_id`.
+3. Support async/await across all backend handlers with clean greenlet-safe ORM loading (`selectinload`).
+4. Keep the LangGraph agent state explainable: track intent, retrieved evidence, pricing floor, and safety decisions.

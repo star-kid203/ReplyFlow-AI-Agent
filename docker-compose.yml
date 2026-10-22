@@ -1,0 +1,25 @@
+# FILE: docker-compose.yml
+version: "3.8"
+
+services:
+  replyflow_postgres:
+    image: postgres:16-alpine
+    container_name: replyflow_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: replyflow
+      POSTGRES_PASSWORD: replyflow_secret
+      POSTGRES_DB: replyflow_db
+    ports:
+      # Host port 5433 -> Container port 5432 (avoids collision with rentaltrakr on 5432)
+      - "5433:5432"
+    volumes:
+      - replyflow_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U replyflow -d replyflow_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  replyflow_postgres_data:
