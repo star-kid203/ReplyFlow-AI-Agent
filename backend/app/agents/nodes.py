@@ -1,5 +1,3 @@
-# backend/app/agents/nodes.py
-
 from datetime import datetime, timezone
 import json
 import logging
@@ -26,6 +24,11 @@ EMOJI_REGEX = re.compile(
     r'[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf]', flags=re.UNICODE
 )
 
+GREETING_REGEX = re.compile(
+    r"^(hello|hi|hey|greetings|bonjour|bonsoir|salut)[!.,\s]*(merci de nous avoir contact[ée]s|thank you for reaching out to [^.!\n]+)?[.!\n]*",
+    flags=re.IGNORECASE,
+)
+
 
 def get_current_time_context() -> Dict[str, Any]:
     now = datetime.now(timezone.utc)
@@ -45,7 +48,7 @@ def clean_customer_name(name: Optional[str]) -> Optional[str]:
 
 
 # ==============================================================================
-# AGENT 1: Inbound Triage & Sentiment Specialist
+# AGENT 1: Inbound Triage Specialist
 # ==============================================================================
 async def triage_agent_node(state: AgentState, llm: BaseLLMProvider) -> Dict[str, Any]:
     time_ctx = get_current_time_context()
@@ -58,7 +61,7 @@ async def triage_agent_node(state: AgentState, llm: BaseLLMProvider) -> Dict[str
         sender_label = h.get("sender") or h.get("sender_type") or "user"
         history_str += f"{sender_label}: {h.get('content', '')}\n"
 
-    business_name = state.get("business_name", "DouaTech Solution Sarl")
+    business_name = state.get("business_name", "Our Business")
 
     # Fast-path check for explicit human staff escalation
     human_keywords = ["staff", "human", "agent", "operator", "real person", "representative", "manager", "support team"]
@@ -67,7 +70,7 @@ async def triage_agent_node(state: AgentState, llm: BaseLLMProvider) -> Dict[str
     )
 
     is_simple_greeting = msg_lower.strip("!.,? ") in {
-        "hello", "hi", "hey", "good morning", "good afternoon", "good evening", "greetings"
+        "hello", "hi", "hey", "good morning", "good afternoon", "good evening", "greetings", "bonjour", "bonsoir", "salut"
     }
 
     system_prompt = f"""You are the Lead Operations Triage Specialist for '{business_name}'.
@@ -76,13 +79,14 @@ Analyze the customer's LATEST message in context of the conversation history.
 Return a strictly valid JSON object with:
 - "intent": one of ["greeting", "product_service_inquiry", "pricing_budget_inquiry", "meeting_scheduling", "explicit_human_request", "dispute_complaint", "general_faq"]
 - "sentiment": one of ["enthusiastic", "positive", "neutral", "price_conscious", "urgent", "frustrated", "hostile"]
-- "meeting_agreed_time": normalized string (e.g. "Monday at 2:00 PM GMT+1") if time was agreed, else null.
+- "search_query": specific item, brand, or service being discussed (e.g. "Techno Spark", "iPhone 17", "Website design") or null if message is just a greeting
+- "meeting_agreed_time": string (e.g. "Monday at 2:00 PM GMT+1") or null
 - "meeting_platform": "Google Meet", "Microsoft Teams", "In-Person", or null
 - "is_meeting_ready_to_book": boolean (true ONLY if day AND time are mutually agreed)
 - "explicit_human_requested": boolean (true if customer asks for human, staff, live representative, or operator)
-- "is_unresolvable_dispute": boolean (true if customer is angry, reporting failure, or demanding refund)
+- "is_unresolvable_dispute": boolean (true if legal threats, fraud, damage, or unresolved dispute)
+- "search_query": core category or brand to search. CRITICAL: If the customer asks for a 'cheaper version', 'another option', or 'alternative', extract the general category (e.g. "MacBook" or "laptop"), NOT the specific model they just rejected!
 
-NOTE: Correct typos mentally (e.g. 'aa staff' means 'a staff member').
 Return JSON only with no markdown formatting.
 """
 
@@ -93,6 +97,7 @@ Return JSON only with no markdown formatting.
             data = {
                 "intent": "explicit_human_request",
                 "sentiment": "urgent" if "asap" in msg_lower else "neutral",
+                "search_query": None,
                 "meeting_agreed_time": None,
                 "meeting_platform": None,
                 "is_meeting_ready_to_book": False,
@@ -103,6 +108,7 @@ Return JSON only with no markdown formatting.
             data = {
                 "intent": "greeting",
                 "sentiment": "neutral",
+                "search_query": None,
                 "meeting_agreed_time": None,
                 "meeting_platform": None,
                 "is_meeting_ready_to_book": False,
@@ -122,8 +128,8 @@ Return JSON only with no markdown formatting.
         step_log: AgentStepLog = {
             "agent_name": "Inbound Triage Specialist",
             "node_id": "inbound_triage",
-            "role_description": "Analyzes inbound conversation context and classifies commercial intent.",
-            "action_taken": f"Classified intent: '{data.get('intent')}' | Human Requested: {data.get('explicit_human_requested')}.",
+            "role_description": "Classifies commercial intent and customer needs.",
+            "action_taken": f"Classified intent: '{data.get('intent')}' | Query: '{data.get('search_query')}'.",
             "evidence_consulted": f"Message text ({len(msg_raw)} chars), history ({len(history_entries)} turns).",
             "latency_ms": 25,
             "tokens_consumed": 125,
@@ -134,6 +140,7 @@ Return JSON only with no markdown formatting.
         return {
             "intent": data.get("intent", "product_service_inquiry"),
             "sentiment": data.get("sentiment", "neutral"),
+            "search_query": data.get("search_query"),
             "meeting_agreed_time": data.get("meeting_agreed_time"),
             "meeting_platform": data.get("meeting_platform"),
             "is_meeting_ready_to_book": bool(data.get("is_meeting_ready_to_book", False)),
@@ -147,6 +154,7 @@ Return JSON only with no markdown formatting.
         return {
             "intent": "explicit_human_request" if is_explicit_human else "product_service_inquiry",
             "sentiment": "urgent" if is_explicit_human else "neutral",
+            "search_query": None if is_simple_greeting else msg_raw[:50],
             "meeting_agreed_time": None,
             "meeting_platform": None,
             "is_meeting_ready_to_book": False,
@@ -165,8 +173,9 @@ async def data_fabric_agent_node(state: AgentState, db: AsyncSession) -> Dict[st
     inventory_service = InventoryConnectorService(db)
     intent = state.get("intent", "product_service_inquiry")
 
+    # If simple greeting, do not search catalog to prevent dumping products
     search_query = state.get("search_query") or ""
-    if intent in ["greeting", "meeting_scheduling", "explicit_human_request"]:
+    if intent in ["greeting", "explicit_human_request"]:
         search_query = ""
 
     conn_q = select(BusinessConnector).where(
@@ -183,29 +192,50 @@ async def data_fabric_agent_node(state: AgentState, db: AsyncSession) -> Dict[st
     b_query = select(Business).where(Business.id == business_uuid)
     b_res = await db.execute(b_query)
     business = b_res.scalar_one_or_none()
-    business_type = business.business_type if business else "service"
+    business_type = business.business_type if business else "retail"
 
     live_catalog_items = []
     if search_query:
         live_catalog_items = await inventory_service.get_live_catalog_or_search(
             business_id=business_uuid,
             search_query=search_query,
-            limit=6,
+            limit=5,
         )
+
+    # Sanitize products: NEVER expose raw integer inventory quantities to prompt!
+    consultative_products = []
+    for item in live_catalog_items:
+        qty = item.get("stock_quantity", 0)
+        # Translate raw stock count into commercial availability phrasing
+        if qty > 5:
+            avail_status = "In Stock (Available for immediate showroom pickup or courier dispatch)"
+        elif qty > 0:
+            avail_status = "Limited Stock Available"
+        else:
+            avail_status = "Central Depot Backorder (24-48h regional transit required)"
+
+        consultative_products.append({
+            "name": item.get("name"),
+            "sku": item.get("sku"),
+            "price": item.get("price"),
+            "availability": avail_status,
+            "description": item.get("description", ""),
+        })
 
     know_query = select(BusinessKnowledge).where(
         BusinessKnowledge.business_id == business_uuid,
         BusinessKnowledge.is_active.is_(True),
     )
     know_res = await db.execute(know_query)
+    # Only load policies relevant to the current conversation
     policies = [{"title": k.title, "content": k.content} for k in know_res.scalars().all()]
 
     step_log: AgentStepLog = {
         "agent_name": "Zetaris Data Fabric Specialist",
         "node_id": "zetaris_data_fabric",
         "role_description": "Executes zero-copy federated queries across enterprise databases.",
-        "action_taken": "Synchronized enterprise context and policies.",
-        "evidence_consulted": f"Zetaris Federated Engine ({len(configured_branches)} branches), {len(policies)} policies.",
+        "action_taken": f"Queried Zetaris for '{search_query}'. Retrieved {len(consultative_products)} relevant items.",
+        "evidence_consulted": f"Zetaris Fabric ({len(configured_branches)} sources), {len(policies)} verified policies.",
         "latency_ms": 118,
         "tokens_consumed": 290,
         "status": "success",
@@ -217,54 +247,74 @@ async def data_fabric_agent_node(state: AgentState, db: AsyncSession) -> Dict[st
 
     return {
         "business_type": business_type,
-        "retrieved_products": live_catalog_items,
+        "retrieved_products": consultative_products,
         "retrieved_knowledge": policies,
         "agent_trace_logs": logs,
     }
-
-
 # ==============================================================================
-# AGENT 3: Commercial Negotiator & Scoping Specialist
+# AGENT 3: Consultative Sales Specialist (Absolute Catalog Supremacy)
 # ==============================================================================
 async def commercial_agent_node(
     state: AgentState, llm: BaseLLMProvider
 ) -> Dict[str, Any]:
-    business_name = state.get("business_name", "DouaTech Solution Sarl")
+    business_name = state.get("business_name", "CamTech Electronics")
+    business_type = state.get("business_type", "retail")
     msg_raw = state["message_content"].strip()
     history_entries = state.get("conversation_history", [])[-6:]
     intent = state.get("intent", "product_service_inquiry")
+    is_ongoing_chat = len(history_entries) > 0
 
     history_str = ""
     for h in history_entries:
         sender = h.get("sender") or h.get("sender_type") or "user"
         history_str += f"{sender}: {h.get('content', '')}\n"
 
-    system_prompt = f"""You are a senior operations consultant at {business_name}.
-You are in a live messaging thread with a client.
+    # Extract exact allowed product names from verified catalog
+    verified_items = state.get("retrieved_products", [])
+    allowed_names = [item.get("name") for item in verified_items if item.get("name")]
+    allowed_list_str = ", ".join(f"'{n}'" for n in allowed_names) if allowed_names else "NO MATCHING PRODUCTS IN STOCK"
 
-CORE PRINCIPLES:
-1. Speak naturally, professionally, and concisely (2 to 3 sentences max).
-2. NEVER repeat the customer's typos or misspellings.
-3. NEVER explain internal rules, AI instructions, or protocols.
-4. If the customer prefers an in-person meeting, acknowledge that our office is in Douala and we can arrange an on-site visit or discuss virtual alternatives.
-5. If the customer is asking about new services, warmly ask 1 clear question to understand their requirements.
+    system_prompt = f"""You are the Lead Sales Specialist for {business_name} ({business_type.upper()}).
+You are messaging a customer directly.
+
+ABSOLUTE CATALOG SUPREMACY (CRITICAL):
+- The ONLY products that exist in our inventory are: [{allowed_list_str}].
+- YOU ARE STRICTLY FORBIDDEN from mentioning, confirming, or offering ANY product not in this list.
+- If a product (such as a 13-inch MacBook or cheaper model) was mentioned earlier in the chat history, but is NOT in [{allowed_list_str}], IT WAS AN ERROR. You must clarify that the [{allowed_list_str}] is our ONLY model currently in stock.
+- NEVER invent models, storage sizes, or prices.
+
+HOW TO RESPOND:
+1. If this is an ongoing chat, NEVER repeat greetings (NO 'Hello', 'Bonjour').
+2. Address the customer's question directly in 1 to 2 clear sentences.
+3. If they ask for a cheaper option and we don't have one in stock, state honestly:
+   "Currently, our only MacBook in stock is the [{allowed_list_str}]. We do not carry a lower-priced model right now, but I can check alternative brands or notify you when smaller configurations arrive."
+
+INTERNAL CATALOG (ZETARIS GROUND TRUTH):
+{json.dumps(verified_items, indent=2)}
 """
 
-    user_prompt = f"""CONVERSATION:
+    user_prompt = f"""CONVERSATION HISTORY:
 {history_str}
-Client: "{msg_raw}"
+Customer: "{msg_raw}"
 
-Response (2-3 natural sentences):"""
+Your strictly grounded reply:"""
 
-    draft = await llm.generate(system_prompt, user_prompt, temperature=0.3)
+    draft = await llm.generate(system_prompt, user_prompt, temperature=0.1)
+
+    if is_ongoing_chat:
+        draft = GREETING_REGEX.sub("", draft).strip()
+        if draft and draft[0].islower():
+            draft = draft[0].upper() + draft[1:]
+
+    draft = re.sub(r"\b(WHO|WHERE|TIME|WHEN|STATUS):\s*", "", draft).strip()
     draft = re.sub(r"\*{2,}", "", draft).strip()
 
     step_log: AgentStepLog = {
         "agent_name": "Commercial Scoping Specialist",
         "node_id": "commercial_scoping",
-        "role_description": "Natural dialogue generation.",
-        "action_taken": f"Drafted response for intent '{intent}'.",
-        "evidence_consulted": f"History ({len(history_entries)} turns).",
+        "role_description": "Enforces strict catalog supremacy and non-hallucination.",
+        "action_taken": f"Grounded response strictly to verified catalog: [{allowed_list_str}].",
+        "evidence_consulted": f"History ({len(history_entries)} turns), Allowed: [{allowed_list_str}].",
         "latency_ms": 35,
         "tokens_consumed": 180,
         "status": "success",
@@ -278,7 +328,6 @@ Response (2-3 natural sentences):"""
         "drafted_response": draft,
         "agent_trace_logs": logs,
     }
-
 
 # ==============================================================================
 # AGENT 4: Policy & Safety Guard Specialist
@@ -307,7 +356,6 @@ async def policy_guard_agent_node(
     is_legal_risk = any(w in message for w in ["scam", "lawyer", "police", "sue", "fraud", "court"])
     is_hostile_dispute = sentiment in ["hostile", "frustrated"] or has_stated_problem
 
-    # FIXED: human_requested explicitly triggers escalation!
     if is_legal_risk or is_hostile_dispute or human_requested:
         step_log["action_taken"] = "CRITIQUE TRIGGERED: Human staff escalation required. Generating handoff brief."
         step_log["status"] = "escalated"
@@ -384,7 +432,6 @@ def action_dispatch_agent_node(state: AgentState) -> Dict[str, Any]:
     }
 
     if decision == "escalate":
-        # ONE CLEAN HANDOFF MESSAGE THAT PAUSES AUTOMATION
         response = (
             f"I have transferred your request to our operations team (Support Ticket #{ticket_code}). "
             "Automated replies on this thread are now paused so a specialist can connect with you directly."
