@@ -1,0 +1,11 @@
+{
+  "run_id": "demo-001-retail-stock",
+  "input": {
+    "query": "Do you have the iPhone 17 in black available today, and where can I pick it up?",
+    "channel": "instagram_dm",
+    "customer_id": "@david_customer"
+  },
+  "options": {
+    "sample_mode": true
+  }
+}

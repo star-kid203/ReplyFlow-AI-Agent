@@ -1,0 +1,11 @@
+{
+  "run_id": "demo-003-support-escalation",
+  "input": {
+    "query": "I paid an invoice 3 weeks ago and our cloud deployment is delayed with no updates! Where is my project manager?",
+    "channel": "linkedin_comment",
+    "customer_id": "@angry_client"
+  },
+  "options": {
+    "sample_mode": true
+  }
+}
