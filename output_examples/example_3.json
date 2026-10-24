@@ -1,0 +1,18 @@
+{
+  "run_id": "demo-003-support-escalation",
+  "status": "success",
+  "output": {
+    "summary": "High-priority customer dispute detected. Support Ticket #22F8EC opened and assigned to management. Automated responses paused; senior specialist handoff brief generated in Live Inbox.",
+    "recommendations": [
+      "Review customer invoice reference and account history.",
+      "Deploy human staff specialist takeover via Live Inbox."
+    ],
+    "artifacts": {
+      "decision": "escalate",
+      "zetaris_engine": "Zetaris Lightning USL (Zero-Copy Virtualization)",
+      "meterless_efficiency": "75.0% token savings"
+    }
+  },
+  "trace_id": "trace-demo-003-support-escalation",
+  "execution_time_seconds": 0.31
+}

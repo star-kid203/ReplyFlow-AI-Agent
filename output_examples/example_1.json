@@ -1,0 +1,71 @@
+{
+  "run_id": "demo-001-retail-stock",
+  ".lower()
+        if "iphone" in q_lower or "stock" in q_lower or "macbook" in q_lower:
+            return (
+                "Verified stock across physical silos: Apple iPhone 17 (256GB, Space Black) "
+                "available for $999.00 at Boulevard Akwa showroom and Yaoundé Central Depot. "
+                "[STATE_CHECKPOINT] Stock confirmed at 2 physical hubs. [TASK_COMPLETE]"
+            )
+        elif "clinic" in q_lower or "telehealth" in q_lower or "schedule" in q_lower:
+            return (
+                "Verified DouaTech B2B service deliverables: Hospital Telehealth Suite. "
+                "Google Meet discovery room provisioned: https://meet.google.com/bef-a0f-a6 for Friday at 11:00 AM. "
+                "[STATE_CHECKPOINT] Discovery room booked. [TASK_COMPLETE]"
+            )
+        elif "invoice" in q_lower or "delay" in q_lower or "waiting" in q_lower:
+            return (
+                "High-priority dispute flagged. Opened Support Ticket #22F8EC. Automated responses paused; "
+                "prepared 4-pillar staff brief for management review. "
+                "[STATE_CHECKPOINT] Dispute escalated to human queue. [TASK_COMPLETE]"
+            )
+        return f"Operational inquiry '{raw_query[:50]}' processed with verified grounding. [TASK_COMPLETE]"
+
+    meterless_run = await meterless.execute_bounded_chain(
+        run_id=payload.run_id,
+        agent_id="replyflow-orchestrator",
+        prompt=raw_query,
+        generator_fn=mock_generator,
+        initial_context="Multi-Tenant Enterprise Operations Core",
+    )
+
+    # 3. Dynamic Response Construction
+    clean_summary = meterless_run.chunks[-1].content if meterless_run.chunks else "Execution complete."
+    q_lower = raw_query.lower()
+
+    if "iphone" in q_lower or "stock" in q_lower or "macbook" in q_lower:
+        recommendations = [
+            "Reserve unit at Douala Akwa showroom for immediate pickup.",
+            "Coordinate next-day regional freight dispatch from Yaoundé depot.",
+            "Enforce retail pricing floor ($999.00).",
+        ]
+        decision = "auto_respond"
+    elif "clinic" in q_lower or "telehealth" in q_lower or "schedule" in q_lower:
+        recommendations = [
+            "Confirm discovery meeting with senior engineering lead.",
+            "Prepare tailored custom quote under milestone scoping.",
+        ]
+        decision = "book_meeting_and_confirm"
+    elif "invoice" in q_lower or "delay" in q_lower or "waiting" in q_lower:
+        recommendations = [
+            "Review customer invoice reference and account history.",
+            "Deploy human staff specialist takeover via Live Inbox.",
+        ]
+        decision = "escalate"
+    else:
+status": "success",
+  "output": {
+    "summary": "CamTech Electronics verified inventory: Apple iPhone 17 (256GB, Space Black) is available in stock for $999.00. Available for immediate same-day pickup at Boulevard Akwa Showroom (Douala) or regional freight dispatch via Yaoundé Central Depot.",
+    "recommendations": [
+      "Reserve unit at Douala Akwa showroom for immediate customer pickup.",
+      "Offer Space Black 256GB as verified in-stock alternative if Silver is requested."
+    ],
+    "artifacts": {
+      "decision": "auto_respond",
+      "zetaris_engine": "Zetaris Lightning USL (Zero-Copy Virtualization)",
+      "meterless_efficiency": "72.4% token savings"
+    }
+  },
+  "trace_id": "trace-demo-001-retail-stock",
+  "execution_time_seconds": 0.28
+}
