@@ -54,7 +54,7 @@ class SocialTriageService:
         self.db = db
 
     def is_generic_noise(self, text: str) -> bool:
-        """Fast Zero-Cost Noise Filter: Drops pure emojis, @mentions, and empty praise (0 tokens)."""
+        """Fast Zero-Cost Noise Filter: Catches pure emojis, hype, fire reactions, and empty praise."""
         cleaned = text.strip().lower()
         if len(cleaned) < 2:
             return True
@@ -66,25 +66,35 @@ class SocialTriageService:
         if len(alphanumeric_only) <= 1:
             return True
 
+        # Comprehensive praise, emoji descriptions, and hype words
         praise_words = {
             "love", "nice", "fire", "awesome", "amazing", "great", "cool",
             "so good", "wow", "congrats", "bravo", "first", "top", "good job",
             "love this", "love it", "super", "clap", "beautiful", "clean",
-            "best", "legend", "goat"
+            "best", "legend", "goat", "release", "drop", "fire release", "hype",
+            "launch", "congratulations", "impressive", "valid", "dope", "hard"
         }
 
+        # Questions or commercial triggers (never drop these)
         inquiry_triggers = {
             "how", "what", "where", "can", "price", "cost", "dm", "quote",
             "available", "stock", "when", "buy", "start", "build", "hire",
-            "need", "deliver", "scam", "late", "refund", "broken", "order", "api", "partner", "wholesale"
+            "need", "deliver", "scam", "late", "refund", "broken", "order",
+            "api", "partner", "wholesale", "?"
         }
+
         words = set(alphanumeric_only.split())
-        if words.intersection(inquiry_triggers):
+        if words.intersection(inquiry_triggers) or "?" in text:
             return False
 
-        non_fluff_words = [w for w in words if w not in {"the", "a", "an", "this", "is", "so", "very"}]
+        # If every word is a praise/hype word, it is noise
+        non_fluff_words = [w for w in words if w not in {"the", "a", "an", "this", "is", "so", "very", "on", "it"}]
         if non_fluff_words and all(w in praise_words for w in non_fluff_words):
             return True
+
+        for phrase in praise_words:
+            if alphanumeric_only == phrase:
+                return True
 
         return False
 
@@ -253,9 +263,12 @@ class SocialTriageService:
         skipped_count = 0
         replies_generated_count = 0
 
-        # Extract Daily Reply Cap (defaults to 50)
+        # Extract Daily Reply Cap
         daily_reply_cap = getattr(payload.directive, "daily_reply_cap", 50) or 50
         allowed_intents = set(payload.directive.target_intents or [])
+
+        # Check if user authorized replying to generic praise/hype
+        allow_praise = "praise" in allowed_intents or "hype" in allowed_intents
 
         # Channel resolution for private handoff inbox
         ch_val = payload.channel.value.lower()
@@ -270,8 +283,9 @@ class SocialTriageService:
 
         is_no_dm_platform = payload.channel in [ChannelType.YOUTUBE_COMMENT, ChannelType.FACEBOOK_COMMENT]
 
-        # Category-to-Directive Mapping
+        # Category mapping
         category_intent_map = {
+            "praise": {"praise", "hype"},
             "complaint": {"complaint", "support"},
             "in_domain_lead": {"lead", "pricing", "product_inquiry"},
             "criticism": {"criticism", "sarcasm"},
@@ -282,15 +296,15 @@ class SocialTriageService:
         for comment in payload.comments:
             content = comment.content.strip()
 
-            # CATEGORY 1: Zero-Cost Spam & Emoji Filter (0 tokens)
-            if payload.directive.ignore_generic_praise and self.is_generic_noise(content):
+            # ZERO-COST NOISE FILTER: If praise is not authorized, drop noise immediately at 0 tokens
+            if not allow_praise and self.is_generic_noise(content):
                 results.append(
                     ProcessedSocialComment(
                         comment_id=comment.comment_id,
                         author_handle=comment.author_handle,
                         content=content,
                         action_taken="skipped_noise",
-                        reason="Noise Filter: Pure emoji or generic praise dropped (0 tokens wasted).",
+                        reason="Noise Filter: Pure emoji or generic hype dropped at 0 token cost.",
                         reply_text=None,
                     )
                 )
@@ -323,6 +337,7 @@ CRITICAL MULTI-TENANT DOMAIN BOUNDARIES:
    - If '{brand_name}' is an electronics retailer (e.g. CamTech), you sell retail consumer electronics, not custom software code.
 2. CATEGORY CLASSIFICATION:
    Classify the comment into one of:
+   - "praise": Pure hype, emojis, excitement, celebration without a technical/commercial question.
    - "complaint": Customer reporting broken order, delay, billing dispute, or anger.
    - "in_domain_lead": Buying interest or scoping for products/services we ACTUALLY offer.
    - "out_of_domain": Customer asking for products/services our company DOES NOT SELL.
@@ -330,7 +345,7 @@ CRITICAL MULTI-TENANT DOMAIN BOUNDARIES:
    - "criticism": Skepticism, price complaints, or sarcasm.
 
 Return a strictly valid JSON object with:
-- "category": one of ["complaint", "in_domain_lead", "out_of_domain", "partnership", "criticism"]
+- "category": one of ["praise", "complaint", "in_domain_lead", "out_of_domain", "partnership", "criticism"]
 - "reason": concise 1-sentence audit explanation
 - "public_reply": 1-2 natural sentences replying directly to the user on public social media.
 - "private_dm": 2-3 sentences opening a tailored private conversation for the inbox, or null.
@@ -362,7 +377,22 @@ Return JSON only without markdown formatting."""
             private_dm = data.get("private_dm")
             audit_reason = data.get("reason", "Evaluated by multi-tenant operations core.")
 
-            # GOVERNANCE CHECK 1: Is this engagement category authorized by creator directives?
+            # GOVERNANCE CHECK 1: If categorized as praise and praise is not allowed, drop it
+            if cat == "praise" and not allow_praise:
+                results.append(
+                    ProcessedSocialComment(
+                        comment_id=comment.comment_id,
+                        author_handle=comment.author_handle,
+                        content=content,
+                        action_taken="skipped_noise",
+                        reason="Noise Filter: Celebratory praise/hype dropped per campaign directive.",
+                        reply_text=None,
+                    )
+                )
+                skipped_count += 1
+                continue
+
+            # GOVERNANCE CHECK 2: Is this engagement category authorized by creator directives?
             required_tags = category_intent_map.get(cat, set())
             category_is_authorized = bool(allowed_intents.intersection(required_tags))
 
@@ -380,7 +410,7 @@ Return JSON only without markdown formatting."""
                 skipped_count += 1
                 continue
 
-            # GOVERNANCE CHECK 2: Has the daily reply cap been reached?
+            # GOVERNANCE CHECK 3: Has the daily reply cap been reached?
             if replies_generated_count >= daily_reply_cap:
                 results.append(
                     ProcessedSocialComment(

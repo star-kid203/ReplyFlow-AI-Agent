@@ -36,8 +36,8 @@ export default function SocialCampaignSimulatorPage() {
   const [commentsJson, setCommentsJson] = useState<string>("");
   const [dailyCap, setDailyCap] = useState(50);
 
-  // 5 Authorized Engagement Rules
-  const [filterNoise, setFilterNoise] = useState(true);
+  // 5 Authorized Engagement Rules (Checked = Allowed to Reply | Unchecked = Muted / Dropped)
+  const [allowPraise, setAllowPraise] = useState(false); // Default: false (drops hype at 0 tokens)
   const [allowLeads, setAllowLeads] = useState(true);
   const [allowCriticism, setAllowCriticism] = useState(true);
   const [allowGrievances, setAllowGrievances] = useState(true);
@@ -163,6 +163,7 @@ export default function SocialCampaignSimulatorPage() {
     setResults([]);
 
     const targetIntents: string[] = [];
+    if (allowPraise) targetIntents.push("praise", "hype");
     if (allowLeads) targetIntents.push("lead", "pricing", "product_inquiry");
     if (allowCriticism) targetIntents.push("criticism", "sarcasm");
     if (allowGrievances) targetIntents.push("complaint", "support");
@@ -181,8 +182,8 @@ export default function SocialCampaignSimulatorPage() {
             post_caption: postCaption,
             creator_persona: persona,
             target_intents: targetIntents,
-            ignore_generic_praise: filterNoise,
-            daily_reply_cap: dailyCap, // Enforces cap in backend
+            ignore_generic_praise: !allowPraise,
+            daily_reply_cap: dailyCap,
           },
           comments: parsedComments,
         }),
@@ -321,25 +322,31 @@ export default function SocialCampaignSimulatorPage() {
             />
           </div>
 
-          {/* 5 Authorized Engagement Rules */}
+          {/* 5 Authorized Engagement Rules (Unchecked = Muted / Dropped) */}
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3 text-xs">
             <span className="text-[10px] uppercase font-mono font-bold text-amber-400 block tracking-wider">
               5 Authorized Engagement Categories:
             </span>
 
+            {/* Rule 1: Noise / Hype */}
             <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
               <input
                 type="checkbox"
-                checked={filterNoise}
-                onChange={(e) => setFilterNoise(e.target.checked)}
+                checked={allowPraise}
+                onChange={(e) => setAllowPraise(e.target.checked)}
                 className="rounded border-slate-700 bg-slate-900 text-indigo-600 mt-0.5"
               />
               <div>
-                <span className="font-semibold text-white">1. Noise & Emoji Filter (0 Tokens)</span>
-                <p className="text-[11px] text-slate-500">Drops pure emojis, friend tags, and generic hype without wasting tokens.</p>
+                <span className="font-semibold text-white">1. Generic Hype & Fan Praise</span>
+                <p className="text-[11px] text-slate-500">
+                  {allowPraise
+                    ? "Checked: AI generates polite thank-you replies."
+                    : "Unchecked (Recommended): Drops emojis and hype at 0 token cost."}
+                </p>
               </div>
             </label>
 
+            {/* Rule 2: Commercial Leads */}
             <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
               <input
                 type="checkbox"
@@ -353,6 +360,7 @@ export default function SocialCampaignSimulatorPage() {
               </div>
             </label>
 
+            {/* Rule 3: Brand Sarcasm & Skepticism */}
             <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
               <input
                 type="checkbox"
@@ -366,6 +374,7 @@ export default function SocialCampaignSimulatorPage() {
               </div>
             </label>
 
+            {/* Rule 4: Customer Support Grievances */}
             <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
               <input
                 type="checkbox"
@@ -379,6 +388,7 @@ export default function SocialCampaignSimulatorPage() {
               </div>
             </label>
 
+            {/* Rule 5: Technical & B2B Partnerships */}
             <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
               <input
                 type="checkbox"
