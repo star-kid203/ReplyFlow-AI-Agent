@@ -1,4 +1,3 @@
-// FILE: frontend/app/inbox/page.tsx
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
@@ -105,7 +104,6 @@ export default function InboxPage() {
     loadData(undefined, id);
   }, [searchParams]);
 
-  // AUTO-SYNC: When switching conversations in the sidebar, automatically re-fetch trace if drawer is open
   useEffect(() => {
     if (showTraceDrawer && selectedConvId) {
       fetchLiveTrace(selectedConvId);
@@ -186,8 +184,8 @@ export default function InboxPage() {
     });
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     const textToSend = replyText.trim();
     if (!textToSend || !activeConversation || sending) return;
 
@@ -248,6 +246,14 @@ export default function InboxPage() {
       alert("Message dispatch failed. Please retry.");
     } finally {
       setSending(false);
+    }
+  };
+
+  // Keyboard Handler: Enter sends, Shift+Enter creates a new line
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
     }
   };
 
@@ -584,7 +590,7 @@ export default function InboxPage() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input Bar */}
+            {/* Input Bar (Auto-Wrapping Multi-Line Textarea) */}
             <div className="p-4 border-t border-slate-800 bg-slate-900/40 space-y-3">
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
@@ -615,36 +621,32 @@ export default function InboxPage() {
                   </div>
                 </div>
 
-                {replyRole === "staff" && (
-                  <span className="text-amber-400 font-mono text-[11px]">
-                    Direct human takeover active
-                  </span>
-                )}
               </div>
 
-              <form onSubmit={handleSendMessage} className="flex gap-3">
-                <input
-                  type="text"
+              <form onSubmit={handleSendMessage} className="flex items-end gap-3">
+                <textarea
+                  rows={2}
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
+                  onKeyDown={handleKeyDown}
                   placeholder={
                     replyRole === "staff"
                       ? "Type response directly to customer as Human Operator..."
                       : `Type as ${activeConversation.customer_name || "Customer"} to trigger AI...`
                   }
-                  className={`flex-1 bg-slate-900 border rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none ${
+                  className={`flex-1 bg-slate-900 border rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none resize-none leading-relaxed transition ${
                     replyRole === "staff"
-                      ? "border-amber-700/60 focus:border-amber-500"
-                      : "border-slate-800 focus:border-indigo-500"
+                      ? "border-amber-700/60 focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                      : "border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                   }`}
                 />
                 <button
                   type="submit"
                   disabled={sending || !replyText.trim()}
-                  className={`px-5 py-2.5 text-white font-medium text-sm rounded-lg flex items-center gap-2 transition disabled:opacity-50 ${
+                  className={`px-5 py-3 text-white font-medium text-sm rounded-xl flex items-center gap-2 transition disabled:opacity-50 shrink-0 ${
                     replyRole === "staff"
-                      ? "bg-amber-600 hover:bg-amber-500"
-                      : "bg-indigo-600 hover:bg-indigo-500"
+                      ? "bg-amber-600 hover:bg-amber-500 shadow-md shadow-amber-950/30"
+                      : "bg-indigo-600 hover:bg-indigo-500 shadow-md shadow-indigo-950/30"
                   }`}
                 >
                   <Send className="w-4 h-4" /> Send
