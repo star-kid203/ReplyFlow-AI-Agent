@@ -53,48 +53,26 @@ class SocialTriageService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    def is_generic_noise(self, text: str) -> bool:
-        """Fast Zero-Cost Noise Filter: Catches pure emojis, hype, fire reactions, and empty praise."""
-        cleaned = text.strip().lower()
-        if len(cleaned) < 2:
+    def is_syntactic_noise(self, text: str) -> bool:
+        """
+        True 0-Cost Noise Filter (Zero Hardcoded Keywords):
+        Drops pure emojis, friend tag mentions, and single punctuation without wasting tokens.
+        Never checks dictionaries or English/French words—pure syntax only.
+        """
+        cleaned = text.strip()
+        if len(cleaned) == 0:
             return True
 
+        # Drop pure user mentions: "@user1 @user2"
         if re.match(r"^(@\w+\s*)+$", cleaned):
             return True
 
-        alphanumeric_only = re.sub(r"[^\w\s]", "", cleaned).strip()
-        if len(alphanumeric_only) <= 1:
+        # Remove all emojis, symbols, and punctuation
+        alphanumeric = re.sub(r"[^\w]", "", cleaned, flags=re.UNICODE).strip()
+
+        # If after stripping emojis and punctuation there are 0 or 1 alphanumeric characters, it is pure emoji/symbol spam
+        if len(alphanumeric) <= 1:
             return True
-
-        # Comprehensive praise, emoji descriptions, and hype words
-        praise_words = {
-            "love", "nice", "fire", "awesome", "amazing", "great", "cool",
-            "so good", "wow", "congrats", "bravo", "first", "top", "good job",
-            "love this", "love it", "super", "clap", "beautiful", "clean",
-            "best", "legend", "goat", "release", "drop", "fire release", "hype",
-            "launch", "congratulations", "impressive", "valid", "dope", "hard"
-        }
-
-        # Questions or commercial triggers (never drop these)
-        inquiry_triggers = {
-            "how", "what", "where", "can", "price", "cost", "dm", "quote",
-            "available", "stock", "when", "buy", "start", "build", "hire",
-            "need", "deliver", "scam", "late", "refund", "broken", "order",
-            "api", "partner", "wholesale", "?"
-        }
-
-        words = set(alphanumeric_only.split())
-        if words.intersection(inquiry_triggers) or "?" in text:
-            return False
-
-        # If every word is a praise/hype word, it is noise
-        non_fluff_words = [w for w in words if w not in {"the", "a", "an", "this", "is", "so", "very", "on", "it"}]
-        if non_fluff_words and all(w in praise_words for w in non_fluff_words):
-            return True
-
-        for phrase in praise_words:
-            if alphanumeric_only == phrase:
-                return True
 
         return False
 
@@ -283,7 +261,7 @@ class SocialTriageService:
 
         is_no_dm_platform = payload.channel in [ChannelType.YOUTUBE_COMMENT, ChannelType.FACEBOOK_COMMENT]
 
-        # Category mapping
+        # Semantic Category Authorization Map
         category_intent_map = {
             "praise": {"praise", "hype"},
             "complaint": {"complaint", "support"},
@@ -296,15 +274,16 @@ class SocialTriageService:
         for comment in payload.comments:
             content = comment.content.strip()
 
-            # ZERO-COST NOISE FILTER: If praise is not authorized, drop noise immediately at 0 tokens
-            if not allow_praise and self.is_generic_noise(content):
+            # LEVEL 1: Zero-Cost Syntactic Noise Filter (0 tokens, no dictionaries)
+            # Drops pure emojis or pure tags (e.g. "🔥🔥🔥", "@user1 @user2")
+            if not allow_praise and self.is_syntactic_noise(content):
                 results.append(
                     ProcessedSocialComment(
                         comment_id=comment.comment_id,
                         author_handle=comment.author_handle,
                         content=content,
                         action_taken="skipped_noise",
-                        reason="Noise Filter: Pure emoji or generic hype dropped at 0 token cost.",
+                        reason="Noise Filter: Pure emoji or mention spam dropped at 0 token cost.",
                         reply_text=None,
                     )
                 )
@@ -319,7 +298,7 @@ class SocialTriageService:
                 wa_number=corporate_wa
             )
 
-            # COGNITIVE REASONING: Dynamic Multi-Tenant Domain Boundary Prompt
+            # LEVEL 2: 100% LLM Cognitive Understanding & Domain Reasoning (Zero Keyword Lists)
             system_prompt = f"""You are {agent_name}, the Lead Operations & Social Intelligence Specialist representing '{brand_name}'.
 Business Profile: {business_desc} ({business_type.upper()}).
 Brand Voice: {payload.directive.creator_persona or business.communication_style}.
@@ -331,28 +310,25 @@ VERIFIED OFFERINGS FOR {brand_name.upper()}:
 VERIFIED KNOWLEDGE & POLICIES:
 {knowledge_summary}
 
-CRITICAL MULTI-TENANT DOMAIN BOUNDARIES:
-1. STRICT IDENTITY: You represent ONLY '{brand_name}'. Never claim to sell products or services outside of verified offerings.
-   - If '{brand_name}' is a software firm (e.g. DouaTech), you DO NOT sell physical phones or electronics wholesale.
-   - If '{brand_name}' is an electronics retailer (e.g. CamTech), you sell retail consumer electronics, not custom software code.
-2. CATEGORY CLASSIFICATION:
-   Classify the comment into one of:
-   - "praise": Pure hype, emojis, excitement, celebration without a technical/commercial question.
-   - "complaint": Customer reporting broken order, delay, billing dispute, or anger.
-   - "in_domain_lead": Buying interest or scoping for products/services we ACTUALLY offer.
-   - "out_of_domain": Customer asking for products/services our company DOES NOT SELL.
-   - "partnership": B2B collaboration, API, reseller, or vendor inquiry.
-   - "criticism": Skepticism, price complaints, or sarcasm.
+REASONING DIRECTIVE:
+Read the commenter's text naturally regardless of language (English, French, slang, typos).
+Analyze the commenter's true intent and classify it into EXACTLY one category:
+- "praise": Generic celebratory comments, hype, congratulations, or excitement without an actual inquiry (e.g. 'fire release', 'bravo l'équipe', 'awesome drop').
+- "complaint": Customer reporting an order delay, broken product, billing dispute, outage, or anger.
+- "in_domain_lead": Commercial buying intent, pricing inquiry, or scoping for products/services {brand_name} ACTUALLY provides.
+- "out_of_domain": Inquiries for products or services that {brand_name} DOES NOT SELL (e.g. asking a software firm for physical iPhones or retail electronics).
+- "partnership": B2B collaboration, API, reseller, or vendor inquiry.
+- "criticism": Skepticism, price pushback, sarcasm, or disbelief.
 
 Return a strictly valid JSON object with:
 - "category": one of ["praise", "complaint", "in_domain_lead", "out_of_domain", "partnership", "criticism"]
 - "reason": concise 1-sentence audit explanation
-- "public_reply": 1-2 natural sentences replying directly to the user on public social media.
+- "public_reply": 1-2 natural sentences replying directly to the user in their language. If out-of-domain, politely explain what {brand_name} actually does.
 - "private_dm": 2-3 sentences opening a tailored private conversation for the inbox, or null.
 
 Return JSON only without markdown formatting."""
 
-            user_prompt = f"Comment by {comment.author_handle}: \"{content}\"\n\nAnalyze and generate response:"
+            user_prompt = f"Comment by {comment.author_handle}: \"{content}\"\n\nCognitive analysis and output:"
 
             try:
                 raw_json = await llm.generate(
@@ -377,7 +353,7 @@ Return JSON only without markdown formatting."""
             private_dm = data.get("private_dm")
             audit_reason = data.get("reason", "Evaluated by multi-tenant operations core.")
 
-            # GOVERNANCE CHECK 1: If categorized as praise and praise is not allowed, drop it
+            # GOVERNANCE GATE 1: If categorized by the LLM as generic praise and praise replies are disabled
             if cat == "praise" and not allow_praise:
                 results.append(
                     ProcessedSocialComment(
@@ -385,14 +361,14 @@ Return JSON only without markdown formatting."""
                         author_handle=comment.author_handle,
                         content=content,
                         action_taken="skipped_noise",
-                        reason="Noise Filter: Celebratory praise/hype dropped per campaign directive.",
+                        reason="Noise Filter: Generic hype/praise dropped per campaign directive.",
                         reply_text=None,
                     )
                 )
                 skipped_count += 1
                 continue
 
-            # GOVERNANCE CHECK 2: Is this engagement category authorized by creator directives?
+            # GOVERNANCE GATE 2: Is this category authorized by the creator?
             required_tags = category_intent_map.get(cat, set())
             category_is_authorized = bool(allowed_intents.intersection(required_tags))
 
@@ -403,14 +379,14 @@ Return JSON only without markdown formatting."""
                         author_handle=comment.author_handle,
                         content=content,
                         action_taken="skipped_by_directive",
-                        reason=f"Governance Filter: Category '{cat}' is disabled in campaign engagement rules. Reply muted.",
+                        reason=f"Governance Filter: Category '{cat}' is disabled in campaign rules. Reply muted.",
                         reply_text=None,
                     )
                 )
                 skipped_count += 1
                 continue
 
-            # GOVERNANCE CHECK 3: Has the daily reply cap been reached?
+            # GOVERNANCE GATE 3: Daily reply cap
             if replies_generated_count >= daily_reply_cap:
                 results.append(
                     ProcessedSocialComment(
@@ -467,7 +443,7 @@ Return JSON only without markdown formatting."""
                     tailored_dm_opening=private_dm,
                 )
 
-            # If on no-DM platform (YouTube, FB), attach bridge link
+            # Attach bridge link for platforms without DMs
             if is_no_dm_platform and bridge_url and bridge_url not in public_reply and cat in ["complaint", "in_domain_lead", "partnership"]:
                 public_reply = f"{public_reply} Connect with us directly here: {bridge_url}"
 
