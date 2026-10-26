@@ -1,7 +1,7 @@
-// FILE: frontend/app/simulator/page.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { fetchBusiness, Business } from "@/lib/api";
 import { getActiveTenantId } from "@/lib/tenant";
 import {
@@ -9,6 +9,7 @@ import {
   Play,
   Sliders,
   MessageSquare,
+  RotateCcw,
 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -23,6 +24,7 @@ interface TriageResult {
 }
 
 export default function SocialCampaignSimulatorPage() {
+  const searchParams = useSearchParams();
   const [tenantId, setTenantId] = useState<string>("");
   const [business, setBusiness] = useState<Business | null>(null);
 
@@ -34,7 +36,7 @@ export default function SocialCampaignSimulatorPage() {
   const [commentsJson, setCommentsJson] = useState<string>("");
   const [dailyCap, setDailyCap] = useState(50);
 
-  // The 5 Authorized Engagement Directive Rules
+  // 5 Authorized Engagement Rules
   const [filterNoise, setFilterNoise] = useState(true);
   const [allowLeads, setAllowLeads] = useState(true);
   const [allowCriticism, setAllowCriticism] = useState(true);
@@ -44,94 +46,117 @@ export default function SocialCampaignSimulatorPage() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<TriageResult[]>([]);
 
-  useEffect(() => {
-    const id = getActiveTenantId();
-    setTenantId(id);
+  // Auto-sync Post URL when changing Target Platform
+  const handlePlatformChange = (newPlatform: string) => {
+    setPlatform(newPlatform);
+    if (newPlatform === "youtube_comment") {
+      setPostUrl("https://youtube.com/watch?v=demo_preview_984");
+    } else if (newPlatform === "instagram_comment") {
+      setPostUrl("https://instagram.com/p/DBc891F0a9b");
+    } else if (newPlatform === "facebook_comment") {
+      setPostUrl("https://facebook.com/posts/1029384756");
+    } else {
+      setPostUrl("https://linkedin.com/feed/update/urn:li:activity:98471928");
+    }
+  };
 
-    fetchBusiness(id).then((biz) => {
+  const loadTenantPresets = (biz: Business) => {
+    setPersona(biz.communication_style || "professional, consultative, and concise");
+
+    const isSoftwareOrService =
+      biz.business_type === "service" ||
+      biz.description?.toLowerCase().includes("software") ||
+      biz.description?.toLowerCase().includes("consulting") ||
+      biz.name.toLowerCase().includes("douatech");
+
+    if (isSoftwareOrService) {
+      setPlatform("linkedin_comment");
+      setPostUrl("https://linkedin.com/feed/update/urn:li:activity:98471928");
+      setPostCaption("Excited to launch our scalable digital enterprise architecture & telehealth suite for high-growth African enterprises! 🚀");
+      setCommentsJson(
+        JSON.stringify(
+          [
+            {
+              comment_id: "c1",
+              author_handle: "@dev_alex",
+              content: "Fire release!! 🔥🔥🔥",
+            },
+            {
+              comment_id: "c2",
+              author_handle: "@cynical_cto",
+              content: "Zero downtime? Yeah right, another enterprise marketing hype.",
+            },
+            {
+              comment_id: "c3",
+              author_handle: "@founder_sarah",
+              content: "Can your firm build our clinic appointment mobile app? How do we start and what is the quote?",
+            },
+            {
+              comment_id: "c4",
+              author_handle: "@angry_client",
+              content: "Our production portal has been unresponsive since 9 AM and ticket #892 is still pending!",
+            },
+            {
+              comment_id: "c5",
+              author_handle: "@b2b_reseller",
+              content: "We run 3 electronics stores in Douala. Do you sell iPhone 17 and laptops in bulk?",
+            },
+          ],
+          null,
+          2
+        )
+      );
+    } else {
+      setPlatform("instagram_comment");
+      setPostUrl("https://instagram.com/p/DBc891F0a9b");
+      setPostCaption("New flagship inventory drop is live! Check our catalog for the latest laptops, smartphones, and audio gear with same-day dispatch.");
+      setCommentsJson(
+        JSON.stringify(
+          [
+            {
+              comment_id: "c1",
+              author_handle: "@fan_girl",
+              content: "Love this so much!! 🔥",
+            },
+            {
+              comment_id: "c2",
+              author_handle: "@shopper_jack",
+              content: "Do you have the iPhone 17 in black available today and where can I pick it up?",
+            },
+            {
+              comment_id: "c3",
+              author_handle: "@price_skeptic",
+              content: "Way overpriced. These devices are definitely marked up too high.",
+            },
+            {
+              comment_id: "c4",
+              author_handle: "@upset_buyer",
+              content: "My order was delayed by 3 days and arrived with broken packaging! I want a refund.",
+            },
+            {
+              comment_id: "c5",
+              author_handle: "@b2b_reseller",
+              content: "We run 3 electronics stores in Douala. Do you offer wholesale bulk pricing for phone resellers?",
+            },
+          ],
+          null,
+          2
+        )
+      );
+    }
+  };
+
+  useEffect(() => {
+    const activeId = getActiveTenantId();
+    setTenantId(activeId);
+
+    fetchBusiness(activeId).then((biz) => {
       if (biz) {
         setBusiness(biz);
-        setPersona(biz.communication_style || "professional, consultative, and concise");
-
-        const isService =
-          biz.business_type === "service" ||
-          biz.description?.toLowerCase().includes("consulting") ||
-          biz.description?.toLowerCase().includes("software");
-
-        if (isService) {
-          setPostCaption("Excited to launch our scalable digital enterprise architecture whitepaper for high-growth firms! 🚀");
-          setCommentsJson(
-            JSON.stringify(
-              [
-                {
-                  comment_id: "c1",
-                  author_handle: "@dev_alex",
-                  content: "Fire release!! 🔥🔥🔥",
-                },
-                {
-                  comment_id: "c2",
-                  author_handle: "@cynical_cto",
-                  content: "Zero downtime? Yeah right, another enterprise marketing scam.",
-                },
-                {
-                  comment_id: "c3",
-                  author_handle: "@founder_sarah",
-                  content: "Can your firm build our logistics tracking mobile app? How do we start and what is the quote?",
-                },
-                {
-                  comment_id: "c4",
-                  author_handle: "@angry_client",
-                  content: "Our production portal has been unresponsive since 9 AM and invoice #892 is still disputed!",
-                },
-                {
-                  comment_id: "c5",
-                  author_handle: "@partner_tech",
-                  content: "We run an enterprise ERP logistics platform and want to integrate your API. Do you support B2B partnerships?",
-                },
-              ],
-              null,
-              2
-            )
-          );
-        } else {
-          setPostCaption("New flagship inventory drop is live! Check our catalog for the latest arrivals with same-day dispatch.");
-          setCommentsJson(
-            JSON.stringify(
-              [
-                {
-                  comment_id: "c1",
-                  author_handle: "@fan_girl",
-                  content: "Love this so much!! 🔥",
-                },
-                {
-                  comment_id: "c2",
-                  author_handle: "@shopper_jack",
-                  content: "Do you have the iPhone 17 in black available today and where can I pick it up?",
-                },
-                {
-                  comment_id: "c3",
-                  author_handle: "@price_skeptic",
-                  content: "Way overpriced. These devices are definitely marked up too high.",
-                },
-                {
-                  comment_id: "c4",
-                  author_handle: "@upset_buyer",
-                  content: "My order was delayed by 3 days and arrived with broken packaging! I want a refund.",
-                },
-                {
-                  comment_id: "c5",
-                  author_handle: "@b2b_reseller",
-                  content: "We run 3 electronics stores in Douala. Do you offer wholesale bulk pricing for resellers?",
-                },
-              ],
-              null,
-              2
-            )
-          );
-        }
+        loadTenantPresets(biz);
       }
     });
-  }, []);
+  }, [searchParams]);
 
   const handleExecuteDirective = async () => {
     setLoading(true);
@@ -157,6 +182,7 @@ export default function SocialCampaignSimulatorPage() {
             creator_persona: persona,
             target_intents: targetIntents,
             ignore_generic_praise: filterNoise,
+            daily_reply_cap: dailyCap, // Enforces cap in backend
           },
           comments: parsedComments,
         }),
@@ -181,6 +207,16 @@ export default function SocialCampaignSimulatorPage() {
         return {
           label: "Noise Filtered (0 Tokens)",
           style: "bg-slate-800 text-slate-400 border border-slate-700",
+        };
+      case "skipped_by_directive":
+        return {
+          label: "Muted by Governance Rule",
+          style: "bg-amber-950/60 text-amber-400 border border-amber-800",
+        };
+      case "skipped_cap_exceeded":
+        return {
+          label: "Daily Cap Reached",
+          style: "bg-rose-950 text-rose-300 border border-rose-800",
         };
       case "sent_private_dm":
         return {
@@ -215,9 +251,18 @@ export default function SocialCampaignSimulatorPage() {
             Social Campaign Directives: <span className="text-indigo-400">{business?.name || "Client"}</span>
           </h1>
           <p className="text-slate-400 text-xs mt-1">
-            Configure how the AI workforce monitors posts, applies 5-tier triage rules, drops spam, and drives high-value conversions.
+            Configure how the AI workforce monitors posts, filters noise at zero token cost, captures leads, and defends the brand.
           </p>
         </div>
+
+        {business && (
+          <button
+            onClick={() => loadTenantPresets(business)}
+            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition border border-slate-700 self-start md:self-auto"
+          >
+            <RotateCcw className="w-3.5 h-3.5" /> Reset {business.name} Presets
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -235,7 +280,7 @@ export default function SocialCampaignSimulatorPage() {
               <label className="text-xs font-semibold text-slate-300">Target Platform</label>
               <select
                 value={platform}
-                onChange={(e) => setPlatform(e.target.value)}
+                onChange={(e) => handlePlatformChange(e.target.value)}
                 className="mt-1 w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
               >
                 <option value="linkedin_comment">LinkedIn Post Comments</option>
@@ -276,13 +321,12 @@ export default function SocialCampaignSimulatorPage() {
             />
           </div>
 
-          {/* The 5 Authorized Engagement Rules */}
+          {/* 5 Authorized Engagement Rules */}
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3 text-xs">
             <span className="text-[10px] uppercase font-mono font-bold text-amber-400 block tracking-wider">
               5 Authorized Engagement Categories:
             </span>
 
-            {/* 1. Noise Filter */}
             <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
               <input
                 type="checkbox"
@@ -296,7 +340,6 @@ export default function SocialCampaignSimulatorPage() {
               </div>
             </label>
 
-            {/* 2. Commercial Leads */}
             <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
               <input
                 type="checkbox"
@@ -310,7 +353,6 @@ export default function SocialCampaignSimulatorPage() {
               </div>
             </label>
 
-            {/* 3. Sarcasm & Criticism */}
             <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
               <input
                 type="checkbox"
@@ -324,7 +366,6 @@ export default function SocialCampaignSimulatorPage() {
               </div>
             </label>
 
-            {/* 4. Customer Support Grievances */}
             <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
               <input
                 type="checkbox"
@@ -338,7 +379,6 @@ export default function SocialCampaignSimulatorPage() {
               </div>
             </label>
 
-            {/* 5. Technical & B2B Partnerships */}
             <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
               <input
                 type="checkbox"
@@ -386,7 +426,7 @@ export default function SocialCampaignSimulatorPage() {
               <Sparkles className="w-8 h-8 text-indigo-400 mx-auto opacity-40" />
               <p className="font-semibold text-slate-300">Ready to execute campaign directives.</p>
               <p className="text-slate-500 max-w-sm mx-auto">
-                Click 'Execute Campaign Directive' to test how the agent drops noise, captures leads, de-escalates grievances, and routes B2B partnerships.
+                Click 'Execute Campaign Directive' to test how the agent drops noise, captures leads, de-escalates grievances, and enforces domain boundaries.
               </p>
             </div>
           ) : (
