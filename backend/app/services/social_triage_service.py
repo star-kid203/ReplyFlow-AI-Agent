@@ -1,4 +1,3 @@
-# FILE: backend/app/services/social_triage_service.py
 from datetime import datetime, timezone
 import json
 import logging
@@ -39,10 +38,7 @@ def generate_omnichannel_bridge_link(
     topic: str,
     wa_number: str = ""
 ) -> str:
-    """
-    Generates a frictionless 1-click deep-link to transition public viewers from
-    YouTube/public comments into an active private chat with pre-filled context.
-    """
+    """Generates a frictionless 1-click deep-link to transition public viewers into private chat."""
     clean_topic = urllib.parse.quote(
         f"Hi {business.name}! I saw your post regarding {topic} and would like to get more details."
     )
@@ -54,24 +50,11 @@ def generate_omnichannel_bridge_link(
 
 
 class SocialTriageService:
-    """
-    Enterprise Social Media & Campaign Comment Ingestion Engine.
-    Handles 5 operational categories:
-    1. Zero-Cost Noise Filter (0 tokens)
-    2. Customer Support & Grievances (Escalates & redirects private)
-    3. Commercial Sales Leads (Captures & provides 1-click bridge)
-    4. Technical & B2B Partnerships (Specs & partnership discovery)
-    5. Brand Defense (Witty, grounded response to sarcasm & skepticism)
-    """
-
     def __init__(self, db: AsyncSession):
         self.db = db
 
     def is_generic_noise(self, text: str) -> bool:
-        """
-        Fast Zero-Cost Noise Filter:
-        Drops pure emojis, @mentions, and empty praise without wasting LLM tokens.
-        """
+        """Fast Zero-Cost Noise Filter: Drops pure emojis, @mentions, and empty praise (0 tokens)."""
         cleaned = text.strip().lower()
         if len(cleaned) < 2:
             return True
@@ -87,70 +70,25 @@ class SocialTriageService:
             "love", "nice", "fire", "awesome", "amazing", "great", "cool",
             "so good", "wow", "congrats", "bravo", "first", "top", "good job",
             "love this", "love it", "super", "clap", "beautiful", "clean",
-            "so much", "best", "legend", "goat", "great tech company", "great company",
-            "tech company", "great tech", "impressive"
+            "best", "legend", "goat"
         }
 
         inquiry_triggers = {
             "how", "what", "where", "can", "price", "cost", "dm", "quote",
             "available", "stock", "when", "buy", "start", "build", "hire",
-            "need", "deliver", "scam", "late", "refund", "broken", "order", "api", "partner"
+            "need", "deliver", "scam", "late", "refund", "broken", "order", "api", "partner", "wholesale"
         }
         words = set(alphanumeric_only.split())
         if words.intersection(inquiry_triggers):
             return False
 
-        non_fluff_words = [w for w in words if w not in {"the", "a", "an", "this", "is", "so", "very", "tech", "company", "firm"}]
+        non_fluff_words = [w for w in words if w not in {"the", "a", "an", "this", "is", "so", "very"}]
         if non_fluff_words and all(w in praise_words for w in non_fluff_words):
             return True
 
-        for phrase in praise_words:
-            if alphanumeric_only == phrase:
-                return True
-
         return False
 
-    def classify_comment_intent(self, text: str) -> Dict[str, bool]:
-        t_lower = text.lower().strip()
-
-        complaint_triggers = [
-            "delayed", "delay", "not working", "broken", "scam", "lawyer", "police",
-            "refund", "invoice", "still waiting", "haven't received", "where is my",
-            "bad service", "poor service", "poor quality", "unresponsive", "pending",
-            "ticket", "issue", "problem", "cancel", "disappointed", "late delivery",
-            "complaint", "order status"
-        ]
-
-        lead_triggers = [
-            "build", "develop", "looking for an agency", "looking for a firm",
-            "looking for someone", "hire", "quote", "how do we start", "how to start",
-            "proposal", "contract", "marketplace app", "telehealth", "pricing",
-            "cost", "need an agency", "need a team", "consultation", "rates",
-            "how much", "can you create", "inquire", "discovery call", "scope",
-            "buy", "in stock", "available today", "purchase", "place an order", "where can i buy"
-        ]
-
-        criticism_triggers = [
-            "yeah right", "marketing hype", "doubt it", "overpriced", "fake",
-            "impossible", "not true", "too expensive", "waste of money", "another scam",
-            "scam company", "ridiculous", "who buys this", "bad", "garbage"
-        ]
-
-        partnership_triggers = [
-            "api", "sdk", "partnership", "collaborate", "integrate", "integration",
-            "documentation", "github", "tech stack", "vendor", "partner", "b2b partnership",
-            "resell", "agency collaboration", "white label"
-        ]
-
-        return {
-            "is_complaint": any(trigger in t_lower for trigger in complaint_triggers),
-            "is_lead": any(trigger in t_lower for trigger in lead_triggers),
-            "is_criticism": any(trigger in t_lower for trigger in criticism_triggers),
-            "is_partnership": any(trigger in t_lower for trigger in partnership_triggers),
-        }
-
     async def _resolve_business_whatsapp(self, business_id: uuid.UUID) -> str:
-        """Fetches configured corporate WhatsApp number for generating deep-links."""
         query = select(BusinessConnector).where(
             BusinessConnector.business_id == business_id,
             BusinessConnector.connector_type == ConnectorType.WHATSAPP_CLOUD,
@@ -172,12 +110,7 @@ class SocialTriageService:
         ticket_type: str,
         tailored_dm_opening: str
     ):
-        """
-        Thread Continuity Engine: Reuses the latest active conversation for that customer
-        without throwing MultipleResultsFound, updates its timestamp, and appends the tailored AI outreach.
-        """
         try:
-            # 1. Resolve or Create Customer
             c_query = select(Customer).where(
                 Customer.business_id == business.id,
                 Customer.external_id == author_handle
@@ -195,7 +128,6 @@ class SocialTriageService:
                 self.db.add(cust)
                 await self.db.flush()
 
-            # 2. Safely find the MOST RECENT active conversation
             conv_q = (
                 select(Conversation)
                 .where(
@@ -220,8 +152,8 @@ class SocialTriageService:
 
             ticket_label = {
                 "complaint": "Public Support Complaint / Escalation",
-                "lead": f"High-Intent Commercial Lead from {post_id}",
-                "partnership": f"B2B Partnership / Integration Inquiry from {post_id}",
+                "lead": f"Commercial Lead from {post_id}",
+                "partnership": f"B2B Partnership Inquiry from {post_id}",
             }.get(ticket_type, "Social Inquiry")
 
             if not conv:
@@ -234,7 +166,7 @@ class SocialTriageService:
                     updated_at=now_time,
                     handoff_summary={
                         "problem": ticket_label,
-                        "expected_resolution": "Review customer case and follow up directly via private DM / chat.",
+                        "expected_resolution": "Follow up directly via private DM / chat.",
                         "lead_source": post_id,
                         "initial_comment": content,
                         "ticket_status": "open_pending_human" if is_urgent_ticket else "lead_engaged"
@@ -251,22 +183,18 @@ class SocialTriageService:
                 )
                 self.db.add(cust_msg)
 
-                ai_agent_name = business.dynamic_agent_name
                 ai_dm_msg = Message(
                     conversation_id=conv.id,
                     sender=MessageSender.AGENT,
                     content=tailored_dm_opening,
-                    metadata_info={"generated_by": ai_agent_name, "delivery_channel": "private_dm"},
+                    metadata_info={"generated_by": business.dynamic_agent_name, "delivery_channel": "private_dm"},
                     created_at=now_time,
                 )
                 self.db.add(ai_dm_msg)
-                logger.info(f"[Triage Engine] Created fresh private thread #{conv.id} for {author_handle}")
             else:
                 conv.updated_at = now_time
                 if is_urgent_ticket:
                     conv.status = ConversationStatus.ESCALATED
-                else:
-                    conv.status = ConversationStatus.OPEN
 
                 cust_msg = Message(
                     conversation_id=conv.id,
@@ -276,16 +204,14 @@ class SocialTriageService:
                 )
                 self.db.add(cust_msg)
 
-                ai_agent_name = business.dynamic_agent_name
                 ai_dm_msg = Message(
                     conversation_id=conv.id,
                     sender=MessageSender.AGENT,
                     content=tailored_dm_opening,
-                    metadata_info={"generated_by": ai_agent_name, "delivery_channel": "private_dm"},
+                    metadata_info={"generated_by": business.dynamic_agent_name, "delivery_channel": "private_dm"},
                     created_at=now_time,
                 )
                 self.db.add(ai_dm_msg)
-                logger.info(f"[Triage Engine] Updated existing private thread #{conv.id} for {author_handle}")
 
             await self.db.commit()
         except Exception as db_err:
@@ -301,7 +227,8 @@ class SocialTriageService:
 
         agent_name = business.dynamic_agent_name
         brand_name = business.name
-        business_type = business.business_type or "service"
+        business_type = (business.business_type or "service").lower()
+        business_desc = business.description or "Enterprise operations"
 
         # 2. Fetch Corporate WhatsApp for 1-Click Deep Links
         corporate_wa = await self._resolve_business_whatsapp(business.id)
@@ -309,19 +236,26 @@ class SocialTriageService:
         # 3. Fetch Verified Ground Truth Offerings
         p_res = await self.db.execute(select(Product).where(Product.business_id == business.id))
         offerings = [
-            {
-                "name": p.name,
-                "description": p.description,
-                "price": f"${p.price}" if p.price > 0 else "Custom Scope / Scoped Quote",
-                "in_stock": p.stock_quantity > 0,
-                "stock_quantity": p.stock_quantity,
-            }
+            f"- {p.name}: {p.description or ''} (${p.price:,.2f})"
+            if p.price > 0 else f"- {p.name}: {p.description or 'Custom Scope / Scoped Quote'}"
             for p in p_res.scalars().all()
         ]
+        catalog_summary = "\n".join(offerings) if offerings else "No static catalog. Custom solutions provider."
+
+        k_res = await self.db.execute(
+            select(BusinessKnowledge).where(BusinessKnowledge.business_id == business.id, BusinessKnowledge.is_active == True)
+        )
+        policies = [f"- {k.title}: {k.content}" for k in k_res.scalars().all()]
+        knowledge_summary = "\n".join(policies) if policies else "Standard professional terms."
 
         llm = get_llm_provider()
         results: List[ProcessedSocialComment] = []
         skipped_count = 0
+        replies_generated_count = 0
+
+        # Extract Daily Reply Cap (defaults to 50)
+        daily_reply_cap = getattr(payload.directive, "daily_reply_cap", 50) or 50
+        allowed_intents = set(payload.directive.target_intents or [])
 
         # Channel resolution for private handoff inbox
         ch_val = payload.channel.value.lower()
@@ -336,10 +270,19 @@ class SocialTriageService:
 
         is_no_dm_platform = payload.channel in [ChannelType.YOUTUBE_COMMENT, ChannelType.FACEBOOK_COMMENT]
 
+        # Category-to-Directive Mapping
+        category_intent_map = {
+            "complaint": {"complaint", "support"},
+            "in_domain_lead": {"lead", "pricing", "product_inquiry"},
+            "criticism": {"criticism", "sarcasm"},
+            "partnership": {"partnership", "api", "integration"},
+            "out_of_domain": {"lead", "pricing", "product_inquiry"},
+        }
+
         for comment in payload.comments:
             content = comment.content.strip()
 
-            # CATEGORY 1: Zero-Cost Spam & Emoji Filter (Saves 80% tokens)
+            # CATEGORY 1: Zero-Cost Spam & Emoji Filter (0 tokens)
             if payload.directive.ignore_generic_praise and self.is_generic_noise(content):
                 results.append(
                     ProcessedSocialComment(
@@ -354,20 +297,110 @@ class SocialTriageService:
                 skipped_count += 1
                 continue
 
-            intent_info = self.classify_comment_intent(content)
-            is_complaint = intent_info["is_complaint"]
-            is_lead = intent_info["is_lead"]
-            is_criticism = intent_info["is_criticism"]
-            is_partnership = intent_info["is_partnership"]
+            bridge_url = generate_omnichannel_bridge_link(
+                business=business,
+                channel=payload.channel,
+                author_handle=comment.author_handle,
+                topic="inquiry",
+                wa_number=corporate_wa
+            )
 
-            # CATEGORY 2: Customer Support Grievance / Dispute
-            if is_complaint:
-                tailored_dm = (
-                    f"Hello {comment.author_handle.replace('@', '')}. We saw your comment regarding: \"{content[:80]}...\". "
-                    "Your case has been escalated with high priority. Please share your registered email, contract reference, or invoice number "
-                    "so our senior support team can resolve this for you directly."
+            # COGNITIVE REASONING: Dynamic Multi-Tenant Domain Boundary Prompt
+            system_prompt = f"""You are {agent_name}, the Lead Operations & Social Intelligence Specialist representing '{brand_name}'.
+Business Profile: {business_desc} ({business_type.upper()}).
+Brand Voice: {payload.directive.creator_persona or business.communication_style}.
+Parent Post Caption: "{payload.directive.post_caption}".
+
+VERIFIED OFFERINGS FOR {brand_name.upper()}:
+{catalog_summary}
+
+VERIFIED KNOWLEDGE & POLICIES:
+{knowledge_summary}
+
+CRITICAL MULTI-TENANT DOMAIN BOUNDARIES:
+1. STRICT IDENTITY: You represent ONLY '{brand_name}'. Never claim to sell products or services outside of verified offerings.
+   - If '{brand_name}' is a software firm (e.g. DouaTech), you DO NOT sell physical phones or electronics wholesale.
+   - If '{brand_name}' is an electronics retailer (e.g. CamTech), you sell retail consumer electronics, not custom software code.
+2. CATEGORY CLASSIFICATION:
+   Classify the comment into one of:
+   - "complaint": Customer reporting broken order, delay, billing dispute, or anger.
+   - "in_domain_lead": Buying interest or scoping for products/services we ACTUALLY offer.
+   - "out_of_domain": Customer asking for products/services our company DOES NOT SELL.
+   - "partnership": B2B collaboration, API, reseller, or vendor inquiry.
+   - "criticism": Skepticism, price complaints, or sarcasm.
+
+Return a strictly valid JSON object with:
+- "category": one of ["complaint", "in_domain_lead", "out_of_domain", "partnership", "criticism"]
+- "reason": concise 1-sentence audit explanation
+- "public_reply": 1-2 natural sentences replying directly to the user on public social media.
+- "private_dm": 2-3 sentences opening a tailored private conversation for the inbox, or null.
+
+Return JSON only without markdown formatting."""
+
+            user_prompt = f"Comment by {comment.author_handle}: \"{content}\"\n\nAnalyze and generate response:"
+
+            try:
+                raw_json = await llm.generate(
+                    system_prompt,
+                    user_prompt,
+                    temperature=0.2,
+                    response_format={"type": "json_object"}
                 )
+                clean_json = raw_json.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+                data = json.loads(clean_json)
+            except Exception as e:
+                logger.warning(f"[Social Triage LLM fallback] {e}")
+                data = {
+                    "category": "criticism",
+                    "reason": "General brand engagement.",
+                    "public_reply": f"Thanks for connecting {comment.author_handle}! Reach out directly to our team here: {bridge_url}",
+                    "private_dm": None
+                }
 
+            cat = data.get("category", "criticism")
+            public_reply = data.get("public_reply", "")
+            private_dm = data.get("private_dm")
+            audit_reason = data.get("reason", "Evaluated by multi-tenant operations core.")
+
+            # GOVERNANCE CHECK 1: Is this engagement category authorized by creator directives?
+            required_tags = category_intent_map.get(cat, set())
+            category_is_authorized = bool(allowed_intents.intersection(required_tags))
+
+            if not category_is_authorized:
+                results.append(
+                    ProcessedSocialComment(
+                        comment_id=comment.comment_id,
+                        author_handle=comment.author_handle,
+                        content=content,
+                        action_taken="skipped_by_directive",
+                        reason=f"Governance Filter: Category '{cat}' is disabled in campaign engagement rules. Reply muted.",
+                        reply_text=None,
+                    )
+                )
+                skipped_count += 1
+                continue
+
+            # GOVERNANCE CHECK 2: Has the daily reply cap been reached?
+            if replies_generated_count >= daily_reply_cap:
+                results.append(
+                    ProcessedSocialComment(
+                        comment_id=comment.comment_id,
+                        author_handle=comment.author_handle,
+                        content=content,
+                        action_taken="skipped_cap_exceeded",
+                        reason=f"Daily Cap Filter: Reached ceiling of {daily_reply_cap} public replies. Reply suppressed to protect quota.",
+                        reply_text=None,
+                    )
+                )
+                skipped_count += 1
+                continue
+
+            # Route to private inbox if in-domain lead, complaint, or partnership
+            action_taken = "replied_publicly"
+            if cat == "complaint":
+                action_taken = "sent_private_dm"
+                if not private_dm:
+                    private_dm = f"Hello {comment.author_handle.replace('@', '')}. We take your feedback seriously. Please share your account reference so our team can resolve this immediately."
                 await self._provision_inbox_thread(
                     business=business,
                     author_handle=comment.author_handle,
@@ -375,48 +408,12 @@ class SocialTriageService:
                     channel=resolved_channel,
                     post_id=payload.directive.post_id,
                     ticket_type="complaint",
-                    tailored_dm_opening=tailored_dm,
+                    tailored_dm_opening=private_dm,
                 )
-
-                if is_no_dm_platform:
-                    bridge_url = generate_omnichannel_bridge_link(
-                        business=business,
-                        channel=payload.channel,
-                        author_handle=comment.author_handle,
-                        topic="support escalation",
-                        wa_number=corporate_wa
-                    )
-                    public_reply = (
-                        f"Hi {comment.author_handle}! We take this very seriously. "
-                        f"To review your account and resolve this securely, please connect directly with our support desk here: {bridge_url}"
-                    )
-                else:
-                    public_reply = (
-                        f"Hi {comment.author_handle}! We take this very seriously and want to review your case directly. "
-                        f"To protect your privacy, please send us a quick direct message (DM) with your reference or email, "
-                        f"and our senior support team will prioritize this right away."
-                    )
-
-                results.append(
-                    ProcessedSocialComment(
-                        comment_id=comment.comment_id,
-                        author_handle=comment.author_handle,
-                        content=content,
-                        action_taken="sent_private_dm",
-                        reason="Customer Support De-escalation: Public complaint acknowledged and redirected to private channels for privacy.",
-                        reply_text=public_reply,
-                    )
-                )
-                continue
-
-            # CATEGORY 3: High-Intent Commercial Sales Lead
-            if is_lead and any(intent in payload.directive.target_intents for intent in ["lead", "pricing", "product_inquiry"]):
-                tailored_dm = (
-                    f"Hi {comment.author_handle.replace('@', '')}! Thanks for reaching out regarding your inquiry: \"{content}\".\n\n"
-                    f"At {brand_name}, we specialize in building scalable solutions tailored to these exact requirements. "
-                    "Could you share a brief overview of your target timeline and key deliverables so we can prepare an initial discovery outline for you?"
-                )
-
+            elif cat == "in_domain_lead":
+                action_taken = "sent_private_dm"
+                if not private_dm:
+                    private_dm = f"Hi {comment.author_handle.replace('@', '')}! Thanks for reaching out regarding your inquiry. Let's discuss your requirements directly."
                 await self._provision_inbox_thread(
                     business=business,
                     author_handle=comment.author_handle,
@@ -424,56 +421,12 @@ class SocialTriageService:
                     channel=resolved_channel,
                     post_id=payload.directive.post_id,
                     ticket_type="lead",
-                    tailored_dm_opening=tailored_dm,
+                    tailored_dm_opening=private_dm,
                 )
-
-                if is_no_dm_platform:
-                    bridge_url = generate_omnichannel_bridge_link(
-                        business=business,
-                        channel=payload.channel,
-                        author_handle=comment.author_handle,
-                        topic="project scoping & pricing",
-                        wa_number=corporate_wa
-                    )
-                    public_reply = (
-                        f"Great connecting with you {comment.author_handle}! We specialize in custom solutions for this. "
-                        f"To scope your requirements and outline a tailored proposal, jump straight into our chat here: {bridge_url}"
-                    )
-                else:
-                    public_reply = (
-                        f"Great connecting with you {comment.author_handle}! We specialize in exactly this. "
-                        f"We'd love to scope your requirements—please send us a direct message (or check your DMs) "
-                        f"so we can share our technical specs and schedule a discovery discussion."
-                    )
-
-                results.append(
-                    ProcessedSocialComment(
-                        comment_id=comment.comment_id,
-                        author_handle=comment.author_handle,
-                        content=content,
-                        action_taken="sent_private_dm",
-                        reason="Sales Conversion: High-intent prospect captured and provisioned in Live Inbox with tailored private outreach.",
-                        reply_text=public_reply,
-                    )
-                )
-                continue
-
-            # CATEGORY 4: Technical & B2B Partnership Inquiries
-            if is_partnership:
-                bridge_url = generate_omnichannel_bridge_link(
-                    business=business,
-                    channel=payload.channel,
-                    author_handle=comment.author_handle,
-                    topic="technical API & B2B partnership",
-                    wa_number=corporate_wa
-                )
-
-                tailored_dm = (
-                    f"Hello {comment.author_handle.replace('@', '')}! Thanks for reaching out regarding partnerships & technical integration with {brand_name}.\n\n"
-                    "Our engineering team supports custom API architectures, enterprise integrations, and agency collaborations. "
-                    "Let's schedule a brief technical sync to explore how our teams can work together."
-                )
-
+            elif cat == "partnership":
+                action_taken = "partnership_engaged"
+                if not private_dm:
+                    private_dm = f"Hello {comment.author_handle.replace('@', '')}! Thanks for your partnership inquiry with {brand_name}. Let's schedule a brief sync to explore collaboration."
                 await self._provision_inbox_thread(
                     business=business,
                     author_handle=comment.author_handle,
@@ -481,70 +434,23 @@ class SocialTriageService:
                     channel=resolved_channel,
                     post_id=payload.directive.post_id,
                     ticket_type="partnership",
-                    tailored_dm_opening=tailored_dm,
+                    tailored_dm_opening=private_dm,
                 )
 
-                public_reply = (
-                    f"Hello {comment.author_handle}! We actively collaborate on enterprise integrations and technical partnerships. "
-                    f"You can review our technical documentation and connect directly with our partnership engineering team here: {bridge_url}"
-                )
+            # If on no-DM platform (YouTube, FB), attach bridge link
+            if is_no_dm_platform and bridge_url and bridge_url not in public_reply and cat in ["complaint", "in_domain_lead", "partnership"]:
+                public_reply = f"{public_reply} Connect with us directly here: {bridge_url}"
 
-                results.append(
-                    ProcessedSocialComment(
-                        comment_id=comment.comment_id,
-                        author_handle=comment.author_handle,
-                        content=content,
-                        action_taken="partnership_engaged",
-                        reason="B2B Partnership: Technical collaboration inquiry captured and routed to engineering discovery.",
-                        reply_text=public_reply,
-                    )
-                )
-                continue
-
-            # CATEGORY 5: Brand Sarcasm, Skepticism & General Public Engagement
-            if business_type == "retail":
-                model_instructions = (
-                    "RETAIL OPERATIONS:\n"
-                    "- State stock availability and exact prices from verified catalog.\n"
-                    "- If asked about out-of-stock items, politely let them know and offer in-stock alternatives."
-                )
-            else:
-                model_instructions = (
-                    "B2B & PROFESSIONAL SERVICES:\n"
-                    "- Explain deliverables and invite them to schedule a discovery scoping call for custom quotes."
-                )
-
-            system_prompt = (
-                f"You are {agent_name}, responding publicly on behalf of '{brand_name}'.\n"
-                f"Brand Voice: {payload.directive.creator_persona or business.communication_style}.\n"
-                f"Post Caption: \"{payload.directive.post_caption}\".\n\n"
-                "STRICT GROUNDING RULES:\n"
-                f"1. You represent ONLY '{brand_name}'. Never confuse this brand with any other organization.\n"
-                f"{model_instructions}\n"
-                "3. If the comment is skeptical, sarcastic, or critical: respond with wit, polite pride, and confidence grounded in facts.\n"
-                "4. Keep the reply short (1 to 2 sentences max) suitable for public social media comments."
-            )
-
-            context_str = f"VERIFIED OFFERINGS FOR {brand_name.upper()}:\n{json.dumps(offerings, indent=2)}"
-            user_prompt = f"{context_str}\n\nComment by {comment.author_handle}: \"{content}\"\nYour public reply:"
-
-            try:
-                reply = await llm.generate(system_prompt, user_prompt, temperature=0.3)
-                action = "replied_publicly"
-                reason = "Brand Engagement: Addressed public inquiry/criticism with verified facts and brand confidence."
-            except Exception as exc:
-                reply = f"Thanks for connecting, {comment.author_handle}! Feel free to send us a direct message and our team will assist you."
-                action = "replied_publicly"
-                reason = "Standard brand engagement."
+            replies_generated_count += 1
 
             results.append(
                 ProcessedSocialComment(
                     comment_id=comment.comment_id,
                     author_handle=comment.author_handle,
                     content=content,
-                    action_taken=action,
-                    reason=reason,
-                    reply_text=reply,
+                    action_taken=action_taken,
+                    reason=audit_reason,
+                    reply_text=public_reply,
                 )
             )
 
