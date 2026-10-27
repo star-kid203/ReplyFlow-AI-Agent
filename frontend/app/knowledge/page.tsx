@@ -821,7 +821,7 @@ export default function BusinessBrainPage() {
                         <div className="bg-slate-950/90 border border-indigo-900/30 rounded-xl p-3 space-y-2 font-mono text-[11px]">
                           <div className="flex items-center justify-between text-[10px] text-indigo-300 font-bold uppercase tracking-wider">
                             <span className="flex items-center gap-1.5">
-                              <Zap className="w-3.5 h-3.5 text-amber-400" /> Zetaris Federated Stock
+                              <Zap className="w-3.5 h-3.5 text-amber-400" /> STOCK AVAILABILITY 
                             </span>
                             <span className="text-[9px] text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 px-1.5 py-0.5 rounded font-bold">
                               Zero-Copy ANSI SQL
